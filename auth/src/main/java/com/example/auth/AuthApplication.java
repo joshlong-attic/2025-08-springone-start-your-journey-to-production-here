@@ -1,23 +1,24 @@
 package com.example.auth;
 
-import jakarta.servlet.ServletException;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
-import org.springframework.security.authentication.ott.OneTimeToken;
+import org.springframework.http.MediaType;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UserDetailsPasswordService;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.provisioning.InMemoryUserDetailsManager;
+import org.springframework.security.provisioning.JdbcUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
-import org.springframework.security.web.authentication.ott.OneTimeTokenGenerationSuccessHandler;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ResponseBody;
 
-import java.io.IOException;
+import javax.sql.DataSource;
+import java.security.Principal;
+import java.util.Map;
 
 import static org.springframework.security.oauth2.server.authorization.config.annotation.web.configurers.OAuth2AuthorizationServerConfigurer.authorizationServer;
 
@@ -28,47 +29,75 @@ public class AuthApplication {
         SpringApplication.run(AuthApplication.class, args);
     }
 
+
     @Bean
-    SecurityFilterChain myAuthServerSpringSecurityFilterChain(HttpSecurity http) throws Exception {
-        return http
-                .formLogin(Customizer.withDefaults())
-                .webAuthn( wa -> wa
-                        .allowedOrigins("http://localhost:8081", "http://127.0.0.1:8081", "http://localhost:9090")
-                        .rpId("localhost")
-                        .rpName("Bootiful Auth")
-                ) //passkeys
-//                .oneTimeTokenLogin( ot -> {
-//                    ot.tokenGenerationSuccessHandler(new OneTimeTokenGenerationSuccessHandler() {
-//                        @Override
-//                        public void handle(HttpServletRequest request, HttpServletResponse response,
-//                                           OneTimeToken oneTimeToken) throws IOException, ServletException {
-////                            /String tokenValue =":9090/ott/token?" oneTimeToken.getTokenValue();
-//                        }
-//                    });
-//                })
-                .authorizeHttpRequests(ae -> ae.anyRequest().authenticated())
+    SecurityFilterChain httpSecurityFilterChain(HttpSecurity security) throws Exception {
+
+        return security
                 .with(authorizationServer(), as -> as.oidc(Customizer.withDefaults()))
+                .authorizeHttpRequests(a -> a.anyRequest().authenticated())
+                .webAuthn(config -> config
+                        .rpId("localhost")
+                        .rpName("bootiful")
+                        .allowedOrigins("http://localhost:9090", "http://127.0.0.1:9090")
+                )
+                .httpBasic(Customizer.withDefaults())
+                .formLogin(Customizer.withDefaults())
+                .oneTimeTokenLogin(ott -> {
+                    ott.tokenGenerationSuccessHandler((request, response, oneTimeToken) -> {
+
+
+                        var msg = "please go to http://localhost:9090/login/ott?token=" +
+                                oneTimeToken.getTokenValue();
+                        System.out.println(msg);
+
+                        response.getWriter().write("you've got console mail!");
+                        response.setContentType(MediaType.TEXT_PLAIN_VALUE);
+                    });
+                })
                 .build();
     }
 
-
     @Bean
     PasswordEncoder passwordEncoder() {
-        // {sha}sflefoslds
         return PasswordEncoderFactories.createDelegatingPasswordEncoder();
     }
 
     @Bean
-    UserDetailsService userDetailsService(PasswordEncoder pwdEncoder) {
-        var josh = User.withUsername("jlong")
-                .password(pwdEncoder.encode("pw"))
-                .roles("USER")
-                .build();
-        var rob = User.withUsername("rwinch")
-                .password(pwdEncoder.encode("pw"))
-                .roles("USER", "ADMIN")
-                .build();
-        return new InMemoryUserDetailsManager(rob, josh);
+    UserDetailsPasswordService userDetailsPasswordService(JdbcUserDetailsManager detailsManager) {
+        return (user, newPassword) -> {
+            var build = User.withUserDetails(user).password(newPassword).build();
+            detailsManager.updateUser(build);
+            return build;
+        };
     }
 
+    @Bean
+    JdbcUserDetailsManager jdbcUserDetailsManager(DataSource dataSource) {
+        return new JdbcUserDetailsManager(dataSource);
+    }
+//
+//    @Bean
+//    UserDetailsService userDetailsService(PasswordEncoder pw) {
+//        var pw1 = pw.encode("pw");
+//        var pw2 = pw.encode("pw");
+//        System.out.println("pw1: " + pw1);
+//        System.out.println("pw2: " + pw2);
+//        var users = Set.of(
+//                User.withUsername("jlong").password(pw1).roles("USER").build(),
+//                User.withUsername("rwinch").password(pw2).roles("USER").build()
+//        );
+//        return new InMemoryUserDetailsManager(users);
+//    }
+//
+}
+
+@Controller
+@ResponseBody
+class HelloController {
+
+    @GetMapping("/")
+    Map<String, String> hello(Principal principal) {
+        return Map.of("name", principal.getName());
+    }
 }

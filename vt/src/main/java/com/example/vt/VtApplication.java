@@ -2,7 +2,6 @@ package com.example.vt;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
-import org.springframework.context.annotation.Bean;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
@@ -18,32 +17,29 @@ public class VtApplication {
         SpringApplication.run(VtApplication.class, args);
     }
 
-    @Bean
-    RestClient restClient(RestClient.Builder builder) {
-        return builder.build();
-    }
 
 }
 
-// stolen from the amazing Cora Iberkleid
 @Controller
 @ResponseBody
 class VtController {
 
-//    private final Executor executor = Executors.newVirtualThreadPerTaskExecutor();
-    
-    private final RestClient restClient;
+    private final RestClient http;
 
-    VtController(RestClient restClient) {
-        this.restClient = restClient;
+    VtController(RestClient.Builder http) {
+        this.http = http.build();
     }
 
     @GetMapping("/delay")
     String delay() {
-        return this.restClient
+        var note = Thread.currentThread() + ":";
+        var r = this.http
                 .get()
                 .uri("http://localhost/delay/5")
                 .retrieve()
                 .body(String.class);
+        note += Thread.currentThread();
+        System.out.println(note);
+        return r;
     }
 }

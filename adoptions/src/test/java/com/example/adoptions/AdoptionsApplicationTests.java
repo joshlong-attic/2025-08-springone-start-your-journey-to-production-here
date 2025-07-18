@@ -8,15 +8,17 @@ import org.springframework.modulith.docs.Documenter;
 @SpringBootTest
 class AdoptionsApplicationTests {
 
-    @Test
-    void contextLoads() {
-        var am = ApplicationModules.of(AdoptionsApplication.class);
-        am.verify() ;
 
-        System.out.println(am);
 
-        new Documenter(am).writeDocumentation();
+	@Test
+	void contextLoads() {
+		var am = ApplicationModules.of(AdoptionsApplication.class);
+		am.verify() ;
 
-    }
+		System.out.println(am);
+
+		new Documenter(am).writeDocumentation();
+
+	}
 
 }

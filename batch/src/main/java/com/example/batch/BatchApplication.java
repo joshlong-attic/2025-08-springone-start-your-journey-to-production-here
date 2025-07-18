@@ -1,11 +1,10 @@
 package com.example.batch;
 
-import org.springframework.aot.hint.MemberCategory;
-import org.springframework.aot.hint.RuntimeHints;
-import org.springframework.aot.hint.RuntimeHintsRegistrar;
 import org.springframework.batch.core.Job;
+import org.springframework.batch.core.JobParametersBuilder;
 import org.springframework.batch.core.Step;
 import org.springframework.batch.core.job.builder.JobBuilder;
+import org.springframework.batch.core.launch.JobLauncher;
 import org.springframework.batch.core.launch.support.RunIdIncrementer;
 import org.springframework.batch.core.repository.JobRepository;
 import org.springframework.batch.core.step.builder.StepBuilder;
@@ -13,57 +12,44 @@ import org.springframework.batch.item.database.JdbcBatchItemWriter;
 import org.springframework.batch.item.database.builder.JdbcBatchItemWriterBuilder;
 import org.springframework.batch.item.file.FlatFileItemReader;
 import org.springframework.batch.item.file.builder.FlatFileItemReaderBuilder;
-import org.springframework.batch.item.support.AbstractItemCountingItemStreamItemReader;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.ApplicationArguments;
+import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.ImportRuntimeHints;
 import org.springframework.core.io.Resource;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import javax.sql.DataSource;
 
 @SpringBootApplication
-@ImportRuntimeHints(BatchApplication.Hints.class)
 public class BatchApplication {
-
-    static class Hints implements RuntimeHintsRegistrar {
-
-        @Override
-        public void registerHints(RuntimeHints hints, ClassLoader classLoader) {
-            for (var c : new Class<?>[]{
-                    FlatFileItemReader.class,
-                    FlatFileItemReaderBuilder.class,
-                    AbstractItemCountingItemStreamItemReader.class})
-             hints.reflection().registerType(c, MemberCategory.values());
-        }
-    }
 
     public static void main(String[] args) {
         SpringApplication.run(BatchApplication.class, args);
     }
 
     @Bean
-    FlatFileItemReader<Dog> flatFileItemReader(@Value("file://${HOME}/Desktop/talk/dogs.csv") Resource csv) {
+    FlatFileItemReader<Dog> reader(@Value("file://${HOME}/Desktop/talk/dogs.csv") Resource resource) {
         return new FlatFileItemReaderBuilder<Dog>()
-                .resource(csv)
-                .name("dogsCsvItemReader")
-                .linesToSkip(1)
+                .resource(resource)
+                .name("csvToDbReader")
                 .delimited()
                 .names("id,name,description,dob,owner,gender,image".split(","))
-                .fieldSetMapper(fieldSet -> new Dog(
-                        fieldSet.readInt("id"),
+                .linesToSkip(1)
+                .fieldSetMapper(fieldSet -> new Dog(fieldSet.readInt("id"),
                         fieldSet.readString("name"),
+                        fieldSet.readString("owner"),
                         fieldSet.readString("description")))
                 .build();
     }
 
     @Bean
-    JdbcBatchItemWriter<Dog> jdbcBatchItemWriter(DataSource dataSource) {
+    JdbcBatchItemWriter<Dog> writer(DataSource dataSource) {
         return new JdbcBatchItemWriterBuilder<Dog>()
                 .dataSource(dataSource)
-                .sql("insert into dog(id, name,description) values(?,?,?)")
+                .sql("INSERT INTO DOG (id, name, description) VALUES (?,?,?)")
                 .itemPreparedStatementSetter((item, ps) -> {
                     ps.setInt(1, item.id());
                     ps.setString(2, item.name());
@@ -73,13 +59,11 @@ public class BatchApplication {
     }
 
     @Bean
-    Step step1(JobRepository repository, PlatformTransactionManager transactionManager,
-               FlatFileItemReader<Dog> dogFlatFileItemReader,
-               JdbcBatchItemWriter<Dog> dogJdbcBatchItemWriter) {
-        return new StepBuilder("step1", repository)
-                .<Dog, Dog>chunk(10, transactionManager)
-                .reader(dogFlatFileItemReader)
-                .writer(dogJdbcBatchItemWriter)
+    Step step(JobRepository repository, JdbcBatchItemWriter<Dog> writer, FlatFileItemReader<Dog> reader, PlatformTransactionManager tx) {
+        return new StepBuilder("csvToDb", repository)
+                .<Dog, Dog>chunk(10, tx)
+                .reader(reader)
+                .writer(writer)
                 .build();
     }
 
@@ -90,7 +74,12 @@ public class BatchApplication {
                 .incrementer(new RunIdIncrementer())
                 .build();
     }
+
+    @Bean
+    ApplicationRunner runner(JobLauncher jobLauncher, Job job) {
+        return _ -> jobLauncher.run(job, new JobParametersBuilder().toJobParameters());
+    }
 }
 
-record Dog(int id, String name, String description) {
+record Dog(int id, String name, String owner, String description) {
 }
